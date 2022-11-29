@@ -15,4 +15,4 @@ def signal1():
 
 def test_pnpt(signal1: np.ndarray):
     fscales, transform, filters, pklets = peaklets.pnpt(signal1)
-    assert np.all(transform > 0)
+    assert np.all(transform >= 0)
