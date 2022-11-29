@@ -4,7 +4,7 @@ from numba import jit, prange
 ### njit yields an order of magnitude improvement ###
 ### !!! parallel=True does not like one line of my code. I can't figure out why !!! ###
 
-@jit(nopython=True, parallel=True)
+@jit(nopython=True, parallel=False)
 def pnpt(data):
     """
     Positive Nonlinear Peak Transform
