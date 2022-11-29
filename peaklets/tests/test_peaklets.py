@@ -2,6 +2,10 @@ import pytest
 import numpy as np
 import peaklets
 
+__all__ = [
+    'test_pnpt'
+]
+
 
 @pytest.fixture
 def signal1():
