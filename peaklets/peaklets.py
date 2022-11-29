@@ -1,6 +1,10 @@
 import numpy as np
 from numba import jit, prange
 
+__all__ = [
+    'pnpt',
+]
+
 ### njit yields an order of magnitude improvement ###
 ### !!! parallel=True does not like one line of my code. I can't figure out why !!! ###
 
