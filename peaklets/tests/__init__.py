@@ -1,1 +1,1 @@
-from test_peaklets import *
+from .test_peaklets import *
