@@ -1,5 +1,6 @@
 import numpy as np
 from numba import jit, prange
+import numba.typed
 
 __all__ = [
     'pnpt',
@@ -8,7 +9,7 @@ __all__ = [
 ### njit yields an order of magnitude improvement ###
 ### !!! parallel=True does not like one line of my code. I can't figure out why !!! ###
 
-@jit(nopython=True, parallel=False)
+@jit(nopython=True, parallel=False, cache=True)
 def pnpt(data):
     """
     Positive Nonlinear Peak Transform
@@ -30,7 +31,7 @@ def pnpt(data):
         fscales = np.delete(fscales,-1)
         Npk = np.delete(Npk,-1)
     
-    pklets = [np.array((1.,)),] # List of all the peaklet arrays.
+    pklets = numba.typed.List([np.array((1.,)),]) # List of all the peaklet arrays.
     filters = np.zeros((Nscales+1, Nt))
     filters[0,:] = data # The narrowest scale is this easy.
     for i in prange(1, Nscales):
@@ -61,7 +62,8 @@ def pnpt(data):
 
     transform = np.empty((Nscales,Nt))
     for i in range(Nscales, 0, -1): # this loop picks up the DC using transform[Nscales]
-        filters[i-1,:] = np.maximum(filters[i,:], filters[i-1,:]) # Fix NEGATIVES PROBLEM
+        for j in prange(filters.shape[~0]):
+            filters[i - 1, j] = max(filters[i, j], filters[i - 1, j])   # Fix NEGATIVES PROBLEM
         transform[i-1,:] = filters[i-1,:]-filters[i,:]
         
     return fscales, transform, filters, pklets
