@@ -2,18 +2,57 @@ import numpy as np
 from numba import jit, prange
 
 __all__ = [
-    'pnpt',
+    'pnpt','pk_trunc_para','pk_parabola'
 ]
 
-### njit yields an order of magnitude improvement ###
-### !!! parallel=True does not like one line of my code. I can't figure out why !!! ###
+import numpy as np
+from numba import jit, prange
+import numba.typed
 
 @jit(nopython=True, parallel=False)
-def pnpt(data):
+def pk_trunc_para(Nt):
     """
-    Positive Nonlinear Peak Transform
+    Truncated parabolic peaklets. The scale is interpreted as a full width at half max.
+    All scales except the smallest are even integers, so that the end points are at
+    exactly half maximum for the truncated parabolae.
+    
+    Input:
+        Nt, the length of the time series to be transformed.
+    Output:
+        sc, a 1D numpy integer array of scales.
+        pk, a list of 1D numpy float arrays, containing the peaklet
+            functions associated with each element of sc. Note that
+            len(pk[i]) = 1+sc[i].
     """
-    Nt = len(data) # number of elements in data array
+    scales=[1,2,4,]
+    next_scale = 6
+    if Nt <= next_scale:
+        raise Exception("Require Nt > 6.")
+    while next_scale < Nt:
+        scales.append(next_scale)
+        next_scale = scales[-1] + scales[-3]
+    Nscales = len(scales)
+    peaklets = [np.array((1.,)),]
+    for i in prange(1,Nscales):
+        x = np.arange(1+scales[i]) - scales[i]//2 # coordinate centered within peaklet
+        peaklet = 0.5 + 0.5*(1. + 2.*x/scales[i])*(1. - 2.*x/scales[i])
+        peaklets.append(peaklet)
+    return np.array(scales), peaklets
+
+@jit(nopython=True, parallel=False)
+def pk_parabola(Nt):
+    """
+    Convex parabolic peaklets. The scale is roughly FWHM/sqrt(2).
+    
+    Input:
+        Nt, the length of the time series to be transformed.
+    Output:
+        sc, a 1D numpy integer array of scales.
+        pk, a list of 1D numpy float arrays, containing the peaklet
+            functions associated with each element of sc. Note that
+            len(pk[i]) = 1+sc[i].
+    
+    """
     epsilon = 1e-15 
         # numpy.finfo not available to numba, and numba numerics are a little
         # less well behaved than numpy numerics. So this is set a bit larger
@@ -30,28 +69,44 @@ def pnpt(data):
         fscales = np.delete(fscales,-1)
         Npk = np.delete(Npk,-1)
     
-    pklets = [np.array((1.,)),] # List of all the peaklet arrays.
-    filters = np.zeros((Nscales+1, Nt))
-    filters[0,:] = data # The narrowest scale is this easy.
+    # pklets = [np.array((1.,)),] # List of all the peaklet arrays.
+    pklets = numba.typed.List([np.array((1.,)),])
     for i in prange(1, Nscales):
         x = np.arange(Npk[i]) - Npk[i]//2
-        pklet = (1 + 2*x/fscales[i])*(1 - 2*x/fscales[i]) #+ 1
+        pklet = (1. + 2.*x/fscales[i])*(1. - 2.*x/fscales[i])
         pklets.append(pklet)
-        
+    return fscales, pklets
+
+### njit yields an order of magnitude improvement ###
+### !!! parallel=True does not like one line of my code. I can't figure out why !!! ###
+@jit(nopython=True, parallel=False)
+def pnpt(data, peaklet_func=pk_parabola):
+    """
+    Positive Nonlinear Peak Transform
+    """
+    Nt = len(data) # number of elements in data array
+    scales,pklets = peaklet_func(Nt) #   get scales and peaklets
+    Nscales = len(scales)
+    filters = np.zeros((Nscales+1, Nt))
+    filters[0,:] = data # The narrowest scale is this easy.
+
+    for i in prange(1, Nscales):
+        pklet = pklets[i]
+        Npk = len(pklet)
         # 3 loops for 3 cases as we slide pklet over data:
-        for j0 in prange(-Npk[i]//2, 0):
+        for j0 in prange(-Npk//2, 0):
             a = 0
-            b  = j0 + Npk[i]
+            b  = j0 + Npk
             a_pk = - j0
-            b_pk = a_pk + b - a # equivalently, Npk[i]
+            b_pk = a_pk + b - a # equivalently, Npk
             mod_pk = pklet[a_pk:b_pk] * np.nanmin( data[a:b] / pklet[a_pk:b_pk] )
             filters[i,a:b] = np.maximum(filters[i,a:b], mod_pk)
-        for j0 in prange(0, Nt-Npk[i]):
+        for j0 in prange(0, Nt-Npk):
             a = j0
-            b = j0 + Npk[i]
+            b = j0 + Npk
             mod_pk = pklet * np.nanmin( data[a:b] / pklet )
             filters[i,a:b] = np.maximum(filters[i,a:b], mod_pk)
-        for j0 in prange(Nt-Npk[i], Nt-Npk[i]//2):
+        for j0 in prange(Nt-Npk, Nt-Npk//2):
             a = j0
             b = Nt
             a_pk = 0
@@ -61,7 +116,9 @@ def pnpt(data):
 
     transform = np.empty((Nscales,Nt))
     for i in range(Nscales, 0, -1): # this loop picks up the DC using transform[Nscales]
-        filters[i-1,:] = np.maximum(filters[i,:], filters[i-1,:]) # Fix NEGATIVES PROBLEM
+        # filters[i-1,:] = np.maximum(filters[i,:], filters[i-1,:]) # Fix NEGATIVES PROBLEM
+        for j in prange(filters.shape[-1]):
+            filters[i-1,j] = max(filters[i,j], filters[i-1,j])
         transform[i-1,:] = filters[i-1,:]-filters[i,:]
         
-    return fscales, transform, filters, pklets
+    return scales, transform, filters, pklets
