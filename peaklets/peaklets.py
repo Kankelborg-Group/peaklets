@@ -77,15 +77,44 @@ def pk_parabola(Nt):
         pklets.append(pklet)
     return fscales, pklets
 
+import dataclasses
+@dataclasses.dataclass
+class PeakletXform:
+    scales:  np.ndarray
+    xform:   np.ndarray
+    filters: np.ndarray
+    pklets:  np.ndarray
+    
+
+
+from typing import Callable
+@jit(nopython=True, parallel=True)
+def pkxform(data: np.ndarray, axis: int = -1, peaklet_func: Callable = pk_parabola) -> PeakletXform:
+    """
+    Peaklet transform on multi-dimensional arrays
+    """
+    axis_positive = axis % data.ndim
+    data = np.moveaxis(data, axis, -1)
+    shape_we_need = data.shape
+    data = np.reshape(data, (-1,data.shape[-1]))
+    scales,pklets = peaklet_func(Nt) #   get scales and peaklets
+    filters = np.empty((len(scales)+1,data.shape[0],data.shape[-1]))    
+    transform = np.empty((len(scales),data.shape[0],data.shape[-1]))
+    for k in prange(data.shape[0]):
+        transform[:,k,:], filters[:,k,:] = pnpt(data[k,:], pklets, scales)
+    transform = np.reshape(transform, transform.shape[-1:]+shape_we_need)
+    transform = np.moveaxis(transform, -1, axis_positive+1)  # back to original data shape, with leading dim.
+    filters = np.reshape(filters, filters.shape[-1:]+shape_we_need)
+    filters = np.moveaxis(filters, -1, axis_positive+1)  # back to original data shape, with leading dim.
+    return PeakletXform(scales, transform, filters, pklets)
+
 ### njit yields an order of magnitude improvement ###
-### !!! parallel=True does not like one line of my code. I can't figure out why !!! ###
 @jit(nopython=True, parallel=False)
-def pnpt(data, peaklet_func=pk_parabola):
+def pnpt(data, pklets, scales):
     """
     Positive Nonlinear Peak Transform
     """
     Nt = len(data) # number of elements in data array
-    scales,pklets = peaklet_func(Nt) #   get scales and peaklets
     Nscales = len(scales)
     filters = np.zeros((Nscales+1, Nt))
     filters[0,:] = data # The narrowest scale is this easy.
@@ -120,5 +149,5 @@ def pnpt(data, peaklet_func=pk_parabola):
         for j in prange(filters.shape[-1]):
             filters[i-1,j] = max(filters[i,j], filters[i-1,j])
         transform[i-1,:] = filters[i-1,:]-filters[i,:]
-        
-    return scales, transform, filters, pklets
+    
+    return transform, filters
