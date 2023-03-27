@@ -2,12 +2,13 @@ import numpy as np
 from numba import jit, prange
 
 __all__ = [
-    'pnpt','pk_trunc_para','pk_parabola'
+    'pnpt','pk_trunc_para','pk_parabola','pkxform'
 ]
 
 import numpy as np
 from numba import jit, prange
 import numba.typed
+from typing import Callable
 
 @jit(nopython=True, parallel=False)
 def pk_trunc_para(Nt):
@@ -84,29 +85,35 @@ class PeakletXform:
     xform:   np.ndarray
     filters: np.ndarray
     pklets:  np.ndarray
-    
 
-
-from typing import Callable
-@jit(nopython=True, parallel=True)
 def pkxform(data: np.ndarray, axis: int = -1, peaklet_func: Callable = pk_parabola) -> PeakletXform:
-    """
-    Peaklet transform on multi-dimensional arrays
-    """
+    
     axis_positive = axis % data.ndim
     data = np.moveaxis(data, axis, -1)
     shape_we_need = data.shape
     data = np.reshape(data, (-1,data.shape[-1]))
-    scales,pklets = peaklet_func(Nt) #   get scales and peaklets
+    
+    (scales, transform, filters, pklets) = _pkxform(data, peaklet_func)
+    
+    transform = np.reshape(transform, transform.shape[:1]+shape_we_need)
+    transform = np.moveaxis(transform, -1, axis_positive+1)  # back to original data shape, with leading dim.
+    filters = np.reshape(filters, filters.shape[:1]+shape_we_need)
+    filters = np.moveaxis(filters, -1, axis_positive+1)  # back to original data shape, with leading dim.
+    
+    return PeakletXform(scales, transform, filters, pklets)
+
+
+@jit(nopython=True, parallel=True)
+def _pkxform(data: np.ndarray, peaklet_func: Callable = pk_parabola):
+    """
+    Peaklet transform on multi-dimensional arrays
+    """
+    scales,pklets = peaklet_func(data.shape[-1]) #   get scales and peaklets
     filters = np.empty((len(scales)+1,data.shape[0],data.shape[-1]))    
     transform = np.empty((len(scales),data.shape[0],data.shape[-1]))
     for k in prange(data.shape[0]):
         transform[:,k,:], filters[:,k,:] = pnpt(data[k,:], pklets, scales)
-    transform = np.reshape(transform, transform.shape[-1:]+shape_we_need)
-    transform = np.moveaxis(transform, -1, axis_positive+1)  # back to original data shape, with leading dim.
-    filters = np.reshape(filters, filters.shape[-1:]+shape_we_need)
-    filters = np.moveaxis(filters, -1, axis_positive+1)  # back to original data shape, with leading dim.
-    return PeakletXform(scales, transform, filters, pklets)
+    return (scales, transform, filters, pklets)
 
 ### njit yields an order of magnitude improvement ###
 @jit(nopython=True, parallel=False)
