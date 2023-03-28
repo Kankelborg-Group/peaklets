@@ -1,3 +1,5 @@
 __pycache__/
 peaklets.egg-info/
 .DS_Store
+docs/_autosummary
+docs/_build
