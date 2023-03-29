@@ -31,11 +31,10 @@ author = 'Charles C. Kankelborg'
 extensions = [
     'sphinx.ext.napoleon',
     'sphinx.ext.autodoc',
-    # "sphinx.ext.autodoc.typehints",
-    # 'sphinx_autodoc_typehints',
     'sphinx.ext.autosummary',
     'sphinx.ext.intersphinx',
     'sphinx.ext.inheritance_diagram',
+    'sphinx.ext.viewcode',
     'jupyter_sphinx',
 ]
 autosummary_generate = True  # Turn on sphinx.ext.autosummary
