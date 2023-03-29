@@ -4,3 +4,10 @@
 [![Documentation Status](https://readthedocs.org/projects/peaklets/badge/?version=latest)](https://peaklets.readthedocs.io/en/latest/?badge=latest)
 
 Decompose a 1D positive signal using only positive basis functions.
+
+## Installation
+
+`peaklets` can be installed using `pip` in the usual manner
+```bash
+pip install peaklets
+```
