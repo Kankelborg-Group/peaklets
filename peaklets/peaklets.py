@@ -87,7 +87,9 @@ class PeakletXform:
     pklets:  np.ndarray
 
 def pkxform(data: np.ndarray, axis: int = -1, peaklet_func: Callable = pk_parabola) -> PeakletXform:
-    
+    """
+    Positive Nonlinear Peak Transform ("peaklet transform") on multi-dimensional arrays.
+    """    
     axis_positive = axis % data.ndim
     data = np.moveaxis(data, axis, -1)
     shape_we_need = data.shape
@@ -106,7 +108,7 @@ def pkxform(data: np.ndarray, axis: int = -1, peaklet_func: Callable = pk_parabo
 @jit(nopython=True, parallel=True)
 def _pkxform(data: np.ndarray, peaklet_func: Callable = pk_parabola):
     """
-    Peaklet transform on multi-dimensional arrays
+    Private function containing the parts of pkxform() that can be jitted.
     """
     scales,pklets = peaklet_func(data.shape[-1]) #   get scales and peaklets
     filters = np.empty((len(scales)+1,data.shape[0],data.shape[-1]))    
@@ -119,7 +121,7 @@ def _pkxform(data: np.ndarray, peaklet_func: Callable = pk_parabola):
 @jit(nopython=True, parallel=False)
 def pnpt(data, pklets, scales):
     """
-    Positive Nonlinear Peak Transform
+    Positive Nonlinear Peak Transform ("peaklet transform") for 1D arrays.
     """
     Nt = len(data) # number of elements in data array
     Nscales = len(scales)
