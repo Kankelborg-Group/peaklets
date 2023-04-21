@@ -2,7 +2,7 @@ import numpy as np
 from numba import jit, prange
 
 __all__ = [
-    'pnpt','pk_trunc_para','pk_parabola','pkxform'
+    'pqpt','pnpt','pk_trunc_para','pk_parabola','pkxform'
 ]
 
 import numpy as np
@@ -114,7 +114,7 @@ def _pkxform(data: np.ndarray, peaklet_func: Callable = pk_parabola):
     filters = np.empty((len(scales)+1,data.shape[0],data.shape[-1]))    
     transform = np.empty((len(scales),data.shape[0],data.shape[-1]))
     for k in prange(data.shape[0]):
-        transform[:,k,:], filters[:,k,:] = pnpt(data[k,:], pklets, scales)
+        transform[:,k,:], filters[:,k,:] = pqpt(data[k,:], pklets, scales)
     return (scales, transform, filters, pklets)
 
 ### njit yields an order of magnitude improvement ###
@@ -122,6 +122,7 @@ def _pkxform(data: np.ndarray, peaklet_func: Callable = pk_parabola):
 def pnpt(data, pklets, scales):
     """
     Positive Nonlinear Peak Transform ("peaklet transform") for 1D arrays.
+    *** 21-Apr-2023 DEPRECATED! TO BE REPLACED BY pqpt() ****
     """
     Nt = len(data) # number of elements in data array
     Nscales = len(scales)
@@ -160,3 +161,47 @@ def pnpt(data, pklets, scales):
         transform[i-1,:] = filters[i-1,:]-filters[i,:]
     
     return transform, filters
+    
+@jit(nopython=True, parallel=False) 
+def pqpt(data, pklets, scales):
+    """
+    Positive Quasi-linear Peak Transform ("peaklet transform") for 1D arrays.
+    """
+    Nt = len(data) # number of elements in data array
+    Nscales = len(scales)
+    transform = np.zeros((Nscales, Nt))
+    residual = data.copy()
+    
+    for i in range(Nscales-1, 0, -1):
+        pklet = pklets[i]
+        Npk = len(pklet)
+        # 3 loops for 3 cases as we slide pklet over data:
+        for j0 in prange(-Npk//2, 0):
+            a = 0
+            b  = j0 + Npk
+            a_pk = - j0
+            b_pk = a_pk + b - a # equivalently, Npk
+            mod_pk = pklet[a_pk:b_pk] * np.nanmin( residual[a:b] / pklet[a_pk:b_pk] )
+            transform[i,a:b] = np.maximum(transform[i,a:b], mod_pk)
+        for j0 in prange(0, Nt-Npk):
+            a = j0
+            b = j0 + Npk
+            mod_pk = pklet * np.nanmin( residual[a:b] / pklet )
+            transform[i,a:b] = np.maximum(transform[i,a:b], mod_pk)
+        for j0 in prange(Nt-Npk, Nt-Npk//2):
+            a = j0
+            b = Nt
+            a_pk = 0
+            b_pk = a_pk + b - a
+            mod_pk = pklet[a_pk:b_pk] * np.nanmin( residual[a:b] / pklet[a_pk:b_pk] )
+            transform[i,a:b] = np.maximum(transform[i,a:b], mod_pk)
+        residual -= transform[i,:]
+    transform[0,:] = residual
+    
+    filters = np.zeros((Nscales+1,Nt))
+    filters[0,:] = data
+    for i in range(1,Nscales+1):
+        filters[i,:] = filters[i-1,:] - transform[i-1,:]
+    
+    return transform, filters
+
