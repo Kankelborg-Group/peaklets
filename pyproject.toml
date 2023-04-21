@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "peaklets"
+authors = [
+    {name = "Charles C. Kankelborg", email = "kankel@montana.edu"},
+    {name = "Roy T. Smart", email = "roytsmart@gmail.com"},
+]
+description = "Decompose a 1D positive signal using only positive basis functions"
+readme = "README.md"
+requires-python = ">=3.7"
+classifiers = [
+    "Programming Language :: Python :: 3",
+]
+dependencies = [
+    "numpy",
+    "numba",
+]
+dynamic = ["version"]
+
+[project.optional-dependencies]
+test = [
+    "pytest"
+]
+doc = [
+    "sphinx-autodoc-typehints",
+    "pydata-sphinx-theme",
+    "jupyter-sphinx",
+]
+
+[project.urls]
+Homepage = "https://github.com/Kankelborg-Group/peaklets"
+
+[tool.setuptools_scm]
