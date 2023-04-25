@@ -33,4 +33,5 @@ doc = [
 [project.urls]
 Homepage = "https://github.com/Kankelborg-Group/peaklets"
 
-[tool.setuptools_scm]
+[tool.setuptools]
+packages = ["peaklets"]
