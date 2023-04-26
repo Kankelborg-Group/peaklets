@@ -203,5 +203,7 @@ def pqpt(data, pklets, scales):
     for i in range(1,Nscales+1):
         filters[i,:] = filters[i-1,:] - transform[i-1,:]
     
+    transform = np.maximum(transform, 0.0)
+    filters = np.maximum(filters, 0.0)
     return transform, filters
 
