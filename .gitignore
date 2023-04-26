@@ -3,3 +3,4 @@ peaklets.egg-info/
 .DS_Store
 docs/_autosummary
 docs/_build
+.ipynb_checkpoints/
