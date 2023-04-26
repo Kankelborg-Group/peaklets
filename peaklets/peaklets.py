@@ -105,7 +105,7 @@ def pkxform(data: np.ndarray, axis: int = -1, peaklet_func: Callable = pk_parabo
     return PeakletXform(scales, transform, filters, pklets)
 
 
-@jit(nopython=True, parallel=True)
+@jit(nopython=True, parallel=False) # normally set parallel=True
 def _pkxform(data: np.ndarray, peaklet_func: Callable = pk_parabola):
     """
     Private function containing the parts of pkxform() that can be jitted.
