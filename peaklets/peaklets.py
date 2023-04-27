@@ -2,7 +2,7 @@ import numpy as np
 from numba import jit, prange
 
 __all__ = [
-    'pqpt','pnpt','pk_trunc_para','pk_parabola','pkxform'
+    'pqpt','pnpt','pk_trunc_para','pk_parabola','pkxform', 'pkxform_optimized',
 ]
 
 import numpy as np
@@ -205,5 +205,78 @@ def pqpt(data, pklets, scales):
     
     transform = np.maximum(transform, 0.0)
     filters = np.maximum(filters, 0.0)
+    return transform, filters
+
+
+def pkxform_optimized(data: np.ndarray, axis: int = -1, peaklet_func: Callable = pk_parabola) -> PeakletXform:
+    """
+    Positive Nonlinear Peak Transform ("peaklet transform") on multi-dimensional arrays.
+    """
+    axis_positive = axis % data.ndim
+    data = np.moveaxis(data, axis, -1)
+    shape_we_need = data.shape
+    data = np.reshape(data, (-1, data.shape[-1]))
+
+    scales, pklets = peaklet_func(data.shape[-1])  # get scales and peaklets
+    transform, filters = pqpt_optimized(data, pklets, scales)
+    transform = np.maximum(transform, 0.0)
+    filters = np.maximum(filters, 0.0)
+
+    transform = np.reshape(transform, transform.shape[:1] + shape_we_need)
+    transform = np.moveaxis(transform, -1, axis_positive + 1)  # back to original data shape, with leading dim.
+    filters = np.reshape(filters, filters.shape[:1] + shape_we_need)
+    filters = np.moveaxis(filters, -1, axis_positive + 1)  # back to original data shape, with leading dim.
+
+    return PeakletXform(scales, transform, filters, pklets)
+
+
+@jit(nopython=True, parallel=True)
+def pqpt_optimized(
+        data: np.ndarray,
+        pklets,
+        scales,
+):
+    Nt = data.shape[~0]
+    Nscales = len(scales)
+
+    transform = np.zeros((len(scales), data.shape[0], data.shape[-1]))
+
+    filters = np.zeros((len(scales) + 1, data.shape[0], data.shape[-1]))
+    filters[0, :] = data
+
+    for k in prange(data.shape[0]):
+
+        residual = data[k].copy()
+
+        for i in range(Nscales - 1, 0, -1):
+
+            pklet = pklets[i]
+            Npk = len(pklet)
+            Rpk = Npk // 2
+
+            for j0 in range(0, Nt):
+                min_j0 = np.inf
+                for j_pk in range(0, Npk):
+                    r_pk = j_pk - Rpk
+                    j = j0 + r_pk
+                    if 0 <= j < Nt:
+                        val = residual[j] / pklet[j_pk]
+                        if val < min_j0:
+                            min_j0 = val
+
+                for j_pk in range(0, Npk):
+                    r_pk = j_pk - Rpk
+                    j = j0 + r_pk
+                    if 0 <= j < Nt:
+                        mod_pk = pklet[j_pk] * min_j0
+                        transform[i, k, j] = max(transform[i, k, j], mod_pk)
+
+            residual -= transform[i, k]
+
+        transform[0, k, :] = residual
+
+        for i in range(1, Nscales + 1):
+            filters[i, k, :] = filters[i - 1, k, :] - transform[i - 1, k, :]
+
     return transform, filters
 
