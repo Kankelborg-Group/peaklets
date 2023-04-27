@@ -117,50 +117,6 @@ def _pkxform(data: np.ndarray, peaklet_func: Callable = pk_parabola):
         transform[:,k,:], filters[:,k,:] = pqpt(data[k,:], pklets, scales)
     return (scales, transform, filters, pklets)
 
-### njit yields an order of magnitude improvement ###
-@jit(nopython=True, parallel=False)
-def pnpt(data, pklets, scales):
-    """
-    Positive Nonlinear Peak Transform ("peaklet transform") for 1D arrays.
-    *** 21-Apr-2023 DEPRECATED! TO BE REPLACED BY pqpt() ****
-    """
-    Nt = len(data) # number of elements in data array
-    Nscales = len(scales)
-    filters = np.zeros((Nscales+1, Nt))
-    filters[0,:] = data # The narrowest scale is this easy.
-
-    for i in prange(1, Nscales):
-        pklet = pklets[i]
-        Npk = len(pklet)
-        # 3 loops for 3 cases as we slide pklet over data:
-        for j0 in prange(-Npk//2, 0):
-            a = 0
-            b  = j0 + Npk
-            a_pk = - j0
-            b_pk = a_pk + b - a # equivalently, Npk
-            mod_pk = pklet[a_pk:b_pk] * np.nanmin( data[a:b] / pklet[a_pk:b_pk] )
-            filters[i,a:b] = np.maximum(filters[i,a:b], mod_pk)
-        for j0 in prange(0, Nt-Npk):
-            a = j0
-            b = j0 + Npk
-            mod_pk = pklet * np.nanmin( data[a:b] / pklet )
-            filters[i,a:b] = np.maximum(filters[i,a:b], mod_pk)
-        for j0 in prange(Nt-Npk, Nt-Npk//2):
-            a = j0
-            b = Nt
-            a_pk = 0
-            b_pk = a_pk + b - a
-            mod_pk = pklet[a_pk:b_pk] * np.nanmin( data[a:b] / pklet[a_pk:b_pk] )
-            filters[i,a:b] = np.maximum(filters[i,a:b], mod_pk)
-
-    transform = np.empty((Nscales,Nt))
-    for i in range(Nscales, 0, -1): # this loop picks up the DC using transform[Nscales]
-        # filters[i-1,:] = np.maximum(filters[i,:], filters[i-1,:]) # Fix NEGATIVES PROBLEM
-        for j in prange(filters.shape[-1]):
-            filters[i-1,j] = max(filters[i,j], filters[i-1,j])
-        transform[i-1,:] = filters[i-1,:]-filters[i,:]
-    
-    return transform, filters
     
 @jit(nopython=True, parallel=False) 
 def pqpt(data, pklets, scales):
