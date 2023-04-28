@@ -2,7 +2,7 @@ import numpy as np
 from numba import jit, prange
 
 __all__ = [
-    'pqpt','pnpt','pk_trunc_para','pk_parabola','pkxform', 'pkxform_optimized',
+    'pqpt','pk_trunc_para','pk_parabola','pkxform', 'pkxform_optimized',
 ]
 
 import numpy as np
@@ -132,7 +132,7 @@ def pqpt(data, pklets, scales):
         pklet = pklets[i]
         Npk = len(pklet)
         # 3 loops for 3 cases as we slide pklet over data:
-        for j0 in prange(-Npk//2, 0):
+        for j0 in prange(-Npk//2, 0): # To give the same result as pqpt_optimized, use -Npk//2+1 ?!?!
             a = 0
             b  = j0 + Npk
             a_pk = - j0
@@ -227,7 +227,7 @@ def pqpt_optimized(
                         mod_pk = pklet[j_pk] * min_j0
                         transform[i, k, j] = max(transform[i, k, j], mod_pk)
 
-            residual -= transform[i, k]
+            residual -= transform[i, k, :]
 
         transform[0, k, :] = residual
 
