@@ -1,5 +1,5 @@
 """
 .. jupyter-execute::
-    notebooks/movie.ipynb
+    ../../notebooks/movie.ipynb
 """
 from .peaklets import *
