@@ -2,13 +2,15 @@ import numpy as np
 from numba import jit, prange
 
 __all__ = [
-    'pqpt','pk_trunc_para','pk_parabola','pkxform', 'pkxform_optimized',
+    'pqpt','pqpt_movie','pk_trunc_para','pk_parabola','pkxform','pkxform_optimized',
 ]
 
 import numpy as np
 from numba import jit, prange
 import numba.typed
 from typing import Callable
+import matplotlib.pyplot as plt
+import celluloid
 
 @jit(nopython=True, parallel=False)
 def pk_trunc_para(Nt):
@@ -117,6 +119,66 @@ def _pkxform(data: np.ndarray, peaklet_func: Callable = pk_parabola):
         transform[:,k,:], filters[:,k,:] = pqpt(data[k,:], pklets, scales)
     return (scales, transform, filters, pklets)
 
+def _frame_movie(ax, camera, residual, transform, mod_pk, a, b):
+    Nt = len(residual)
+    ax.set_xlabel('time (samples)')
+    ax.set_ylabel('signal')
+    p1, = ax.plot(residual,'b',label='residual', linewidth=3)
+    p2 = ax.fill_between(np.arange(Nt), transform, color=(0.9,0.8,1), label='transform')
+    p3, = ax.plot(np.arange(a,b), mod_pk, 'm', label='peaklet')
+    ax.legend(handles=[p1,p2,p3])
+    camera.snap()
+    return
+
+def pqpt_movie(data, pklets, scales):
+    """
+    1D Positive Quasi-linear Peak Transform ("peaklet transform") for making animations.
+    """   
+    Nt = len(data) # number of elements in data array
+    Nscales = len(scales)
+    transform = np.zeros((Nscales, Nt))
+    residual = data.copy()
+    fig,ax = plt.subplots()
+    camera = celluloid.Camera(fig)
+    for i in range(Nscales-1, 0, -1):
+        pklet = pklets[i]
+        Npk = len(pklet)
+        # 3 loops for 3 cases as we slide pklet over data:
+        for j0 in prange(-Npk//2, 0): # To give the same result as pqpt_optimized, use -Npk//2+1 ?!?!
+            a = 0
+            b  = j0 + Npk
+            a_pk = - j0
+            b_pk = a_pk + b - a # equivalently, Npk
+            mod_pk = pklet[a_pk:b_pk] * np.nanmin( residual[a:b] / pklet[a_pk:b_pk] )
+            transform[i,a:b] = np.maximum(transform[i,a:b], mod_pk)
+            _frame_movie(ax, camera, residual, transform[i,:], mod_pk, a, b)
+        for j0 in prange(0, Nt-Npk):
+            a = j0
+            b = j0 + Npk
+            mod_pk = pklet * np.nanmin( residual[a:b] / pklet )
+            transform[i,a:b] = np.maximum(transform[i,a:b], mod_pk)
+            _frame_movie(ax, camera, residual, transform[i,:], mod_pk, a, b)
+        for j0 in prange(Nt-Npk, Nt-Npk//2):
+            a = j0
+            b = Nt
+            a_pk = 0
+            b_pk = a_pk + b - a
+            mod_pk = pklet[a_pk:b_pk] * np.nanmin( residual[a:b] / pklet[a_pk:b_pk] )
+            transform[i,a:b] = np.maximum(transform[i,a:b], mod_pk)
+            _frame_movie(ax, camera, residual, transform[i,:], mod_pk, a, b)
+        residual -= transform[i,:]
+    transform[0,:] = residual
+        
+    filters = np.zeros((Nscales+1,Nt))
+    filters[0,:] = data
+    for i in range(1,Nscales+1):
+        filters[i,:] = filters[i-1,:] - transform[i-1,:]
+    
+    transform = np.maximum(transform, 0.0)
+    filters = np.maximum(filters, 0.0)
+    animation = camera.animate()
+    plt.close(fig)
+    return animation, transform, filters
     
 @jit(nopython=True, parallel=False) 
 def pqpt(data, pklets, scales):

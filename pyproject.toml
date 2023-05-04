@@ -16,6 +16,8 @@ classifiers = [
 ]
 dependencies = [
     "numpy",
+    "celluloid",
+    "matplotlib",
     "numba",
 ]
 dynamic = ["version"]
