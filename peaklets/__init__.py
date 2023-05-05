@@ -17,7 +17,9 @@
     Nt = len(signal)
     scales, pklets = pk.pk_parabola(Nt)
     animation, transform, filters = pk.pqpt_movie(signal, pklets, scales)
-    HTML( animation.to_jshtml() )
+
+    plt.rcParams["animation.embed_limit"] = 30
+    HTML( animation.to_jshtml(fps=30, ) )
 
 """
 from .peaklets import *
