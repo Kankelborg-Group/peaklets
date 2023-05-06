@@ -45,7 +45,8 @@ def pk_trunc_para(Nt):
 @jit(nopython=True, parallel=False)
 def pk_parabola(Nt):
     """
-    Convex parabolic peaklets. The scale is roughly FWHM/sqrt(2).
+    Convex parabolic peaklets. The scale is FWHM of the parabola,
+        which is the distance between roots divided by np.sqrt(2).
     
     Input:
         Nt, the length of the time series to be transformed.
@@ -78,7 +79,7 @@ def pk_parabola(Nt):
         x = np.arange(Npk[i]) - Npk[i]//2
         pklet = (1. + 2.*x/fscales[i])*(1. - 2.*x/fscales[i])
         pklets.append(pklet)
-    return fscales, pklets
+    return fscales/np.sqrt(2), pklets
 
 import dataclasses
 @dataclasses.dataclass
@@ -119,14 +120,20 @@ def _pkxform(data: np.ndarray, peaklet_func: Callable = pk_parabola):
         transform[:,k,:], filters[:,k,:] = pqpt(data[k,:], pklets, scales)
     return (scales, transform, filters, pklets)
 
-def _frame_movie(ax, camera, residual, transform, mod_pk, a, b):
+def _frame_movie(ax, camera, data, residual, transform, mod_pk, scale, a, b):
+    """
+    Add a frame to the animation. Private, called by pqpt_movie().
+    """
     Nt = len(residual)
     ax.set_xlabel('time (samples)')
     ax.set_ylabel('signal')
-    p1, = ax.plot(residual,'b',label='residual', linewidth=3)
+    ax.text(0.05,0.95,'Scale = {:.1f}'.format(scale), transform=ax.transAxes, verticalalignment='top')
+    p0, = ax.plot(data,'b',label='data', linewidth=2)
+    p1, = ax.plot(residual,'b:',label='residual', linewidth=2)
     p2 = ax.fill_between(np.arange(Nt), transform, color=(0.9,0.8,1), label='transform')
     p3, = ax.plot(np.arange(a,b), mod_pk, 'm', label='peaklet')
-    ax.legend(handles=[p1,p2,p3])
+    ax.plot(np.array((a,b)), np.array((0,0)), 'm.')
+    ax.legend(handles=[p0,p1,p2,p3])
     camera.snap()
     return
 
@@ -151,13 +158,13 @@ def pqpt_movie(data, pklets, scales):
             b_pk = a_pk + b - a # equivalently, Npk
             mod_pk = pklet[a_pk:b_pk] * np.nanmin( residual[a:b] / pklet[a_pk:b_pk] )
             transform[i,a:b] = np.maximum(transform[i,a:b], mod_pk)
-            _frame_movie(ax, camera, residual, transform[i,:], mod_pk, a, b)
+            _frame_movie(ax, camera, data, residual, transform[i,:], mod_pk, scales[i], a, b)
         for j0 in prange(0, Nt-Npk):
             a = j0
             b = j0 + Npk
             mod_pk = pklet * np.nanmin( residual[a:b] / pklet )
             transform[i,a:b] = np.maximum(transform[i,a:b], mod_pk)
-            _frame_movie(ax, camera, residual, transform[i,:], mod_pk, a, b)
+            _frame_movie(ax, camera, data, residual, transform[i,:], mod_pk, scales[i], a, b)
         for j0 in prange(Nt-Npk, Nt-Npk//2):
             a = j0
             b = Nt
@@ -165,7 +172,7 @@ def pqpt_movie(data, pklets, scales):
             b_pk = a_pk + b - a
             mod_pk = pklet[a_pk:b_pk] * np.nanmin( residual[a:b] / pklet[a_pk:b_pk] )
             transform[i,a:b] = np.maximum(transform[i,a:b], mod_pk)
-            _frame_movie(ax, camera, residual, transform[i,:], mod_pk, a, b)
+            _frame_movie(ax, camera, data, residual, transform[i,:], mod_pk, scales[i], a, b)
         residual -= transform[i,:]
     transform[0,:] = residual
         
