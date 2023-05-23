@@ -2,7 +2,7 @@ import numpy as np
 from numba import jit, prange
 
 __all__ = [
-    'pqpt','pqpt_movie','pk_trunc_para','pk_parabola','pkxform','pkxform_optimized',
+    'pqpt','pqpt_movie','pk_trunc_para','pk_parabola','pk_parabola2','pkxform','pkxform_optimized',
 ]
 
 import numpy as np
@@ -45,6 +45,8 @@ def pk_trunc_para(Nt):
 @jit(nopython=True, parallel=False)
 def pk_parabola(Nt):
     """
+    *** DEPRECATED: SCALE 1 IS ALWAYS EMPTY BECAUSE IT FALLS BETWEEN ADJACENT INTEGER WIDTHS. ***
+    
     Convex parabolic peaklets. The scale is FWHM of the parabola,
         which is the distance between roots divided by np.sqrt(2).
     
@@ -81,6 +83,47 @@ def pk_parabola(Nt):
         pklets.append(pklet)
     return fscales/np.sqrt(2), pklets
 
+@jit(nopython=True, parallel=False)
+def pk_parabola2(Nt):
+    """
+    Convex parabolic peaklets. The scale is FWHM of the parabola,
+        which is the distance between roots divided by np.sqrt(2).
+        In this version, the roots of the parabola are placed at
+        integer distances, k_n, from the center. The log-k spacing
+        is coarse at first, but it quickly converges to about 11.5
+        steps per decade in scale. This avoids the problem of
+        informationless scales when the kernel is small, but
+        delivers high resolution when the scale is larger.
+        The sequence used for the parabola half-width is:
+        
+            k_n = k_{n-3} + k_{n-4}
+            
+    Input:
+        Nt, the length of the time series to be transformed.
+    Output:
+        sc, a 1D numpy integer array of scales.
+        pk, a list of 1D numpy float arrays, containing the peaklet
+            functions associated with each element of sc. Note that
+            len(pk[i]) = 1+sc[i].
+    
+    """
+    k = [1,2,3,4,5,6] # array of parabola half-widths (center to root)
+    while True:
+        next_k = k[-3] + k[-4]  # i.e., k_n = k_{n-3} + k_{n-4}.
+        if (2*next_k+1 > Nt): # stop once the kernel would be too big for the data array.
+            break
+        k.append(next_k)
+    r = np.array(k) # numpy array of kernel radii. Kernel will have 2r-1 nonzero elements.
+    
+    Nscales = len(r)
+    pklets = numba.typed.List([np.array((1.,)),])
+    for i in prange(1,Nscales):
+        x = np.arange(1-r[i],r[i])
+        pklet = (1. + x/r[i])*(1. - x/r[i])
+        pklets.append(pklet)
+    return r*np.sqrt(2), pklets
+
+
 import dataclasses
 @dataclasses.dataclass
 class PeakletXform:
@@ -89,7 +132,7 @@ class PeakletXform:
     filters: np.ndarray
     pklets:  np.ndarray
 
-def pkxform(data: np.ndarray, axis: int = -1, peaklet_func: Callable = pk_parabola) -> PeakletXform:
+def pkxform(data: np.ndarray, axis: int = -1, peaklet_func: Callable = pk_parabola2) -> PeakletXform:
     """
     Positive Nonlinear Peak Transform ("peaklet transform") on multi-dimensional arrays.
     """    
@@ -109,7 +152,7 @@ def pkxform(data: np.ndarray, axis: int = -1, peaklet_func: Callable = pk_parabo
 
 
 @jit(nopython=True, parallel=True) # normally set parallel=True
-def _pkxform(data: np.ndarray, peaklet_func: Callable = pk_parabola):
+def _pkxform(data: np.ndarray, peaklet_func: Callable = pk_parabola2):
     """
     Private function containing the parts of pkxform() that can be jitted.
     """
@@ -233,7 +276,7 @@ def pqpt(data, pklets, scales):
     return transform, filters
 
 
-def pkxform_optimized(data: np.ndarray, axis: int = -1, peaklet_func: Callable = pk_parabola) -> PeakletXform:
+def pkxform_optimized(data: np.ndarray, axis: int = -1, peaklet_func: Callable = pk_parabola2) -> PeakletXform:
     """
     Positive Nonlinear Peak Transform ("peaklet transform") on multi-dimensional arrays.
     """
