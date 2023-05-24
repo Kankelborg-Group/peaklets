@@ -121,7 +121,7 @@ def pk_parabola2(Nt):
         x = np.arange(1-r[i],r[i])
         pklet = (1. + x/r[i])*(1. - x/r[i])
         pklets.append(pklet)
-    return r*np.sqrt(2), pklets
+    return r, pklets
 
 
 import dataclasses
@@ -217,8 +217,11 @@ def pqpt_movie(data, pklets, scales):
             transform[i,a:b] = np.maximum(transform[i,a:b], mod_pk)
             _frame_movie(ax, camera, data, residual, transform[i,:], mod_pk, scales[i], a, b)
         residual -= transform[i,:]
+    # Smallest scale:
+    i=0
     transform[0,:] = residual
-        
+    _frame_movie(ax, camera, data, residual, transform[i,:], mod_pk, scales[i], a, b)  
+    
     filters = np.zeros((Nscales+1,Nt))
     filters[0,:] = data
     for i in range(1,Nscales+1):
