@@ -2,9 +2,10 @@ import numpy as np
 from numba import jit, prange
 
 __all__ = [
-    'pqpt','pqpt_movie','pk_trunc_para','pk_parabola','pk_parabola2','pkxform','pkxform_optimized',
+    'pqpt_movie','pk_trunc_para','pk_parabola','pk_parabola2','pkxform',
 ]
 
+import dataclasses
 import numpy as np
 from numba import jit, prange
 import numba.typed
@@ -124,7 +125,6 @@ def pk_parabola2(Nt):
     return r, pklets
 
 
-import dataclasses
 @dataclasses.dataclass
 class PeakletXform:
     scales:  np.ndarray
@@ -132,36 +132,6 @@ class PeakletXform:
     filters: np.ndarray
     pklets:  np.ndarray
 
-def pkxform(data: np.ndarray, axis: int = -1, peaklet_func: Callable = pk_parabola2) -> PeakletXform:
-    """
-    Positive Nonlinear Peak Transform ("peaklet transform") on multi-dimensional arrays.
-    """    
-    axis_positive = axis % data.ndim
-    data = np.moveaxis(data, axis, -1)
-    shape_we_need = data.shape
-    data = np.reshape(data, (-1,data.shape[-1]))
-    
-    (scales, transform, filters, pklets) = _pkxform(data, peaklet_func)
-    
-    transform = np.reshape(transform, transform.shape[:1]+shape_we_need)
-    transform = np.moveaxis(transform, -1, axis_positive+1)  # back to original data shape, with leading dim.
-    filters = np.reshape(filters, filters.shape[:1]+shape_we_need)
-    filters = np.moveaxis(filters, -1, axis_positive+1)  # back to original data shape, with leading dim.
-    
-    return PeakletXform(scales, transform, filters, pklets)
-
-
-@jit(nopython=True, parallel=True) # normally set parallel=True
-def _pkxform(data: np.ndarray, peaklet_func: Callable = pk_parabola2):
-    """
-    Private function containing the parts of pkxform() that can be jitted.
-    """
-    scales,pklets = peaklet_func(data.shape[-1]) #   get scales and peaklets
-    filters = np.empty((len(scales)+1,data.shape[0],data.shape[-1]))    
-    transform = np.empty((len(scales),data.shape[0],data.shape[-1]))
-    for k in prange(data.shape[0]):
-        transform[:,k,:], filters[:,k,:] = pqpt(data[k,:], pklets, scales)
-    return (scales, transform, filters, pklets)
 
 def _frame_movie(ax, camera, data, residual, transform, mod_pk, scale, a, b):
     """
@@ -232,54 +202,9 @@ def pqpt_movie(data, pklets, scales):
     animation = camera.animate()
     plt.close(fig)
     return animation, transform, filters
-    
-@jit(nopython=True, parallel=False) 
-def pqpt(data, pklets, scales):
-    """
-    Positive Quasi-linear Peak Transform ("peaklet transform") for 1D arrays.
-    """
-    Nt = len(data) # number of elements in data array
-    Nscales = len(scales)
-    transform = np.zeros((Nscales, Nt))
-    residual = data.copy()
-    
-    for i in range(Nscales-1, 0, -1):
-        pklet = pklets[i]
-        Npk = len(pklet)
-        # 3 loops for 3 cases as we slide pklet over data:
-        for j0 in prange(-Npk//2, 0): # To give the same result as pqpt_optimized, use -Npk//2+1 ?!?!
-            a = 0
-            b  = j0 + Npk
-            a_pk = - j0
-            b_pk = a_pk + b - a # equivalently, Npk
-            mod_pk = pklet[a_pk:b_pk] * np.nanmin( residual[a:b] / pklet[a_pk:b_pk] )
-            transform[i,a:b] = np.maximum(transform[i,a:b], mod_pk)
-        for j0 in prange(0, Nt-Npk):
-            a = j0
-            b = j0 + Npk
-            mod_pk = pklet * np.nanmin( residual[a:b] / pklet )
-            transform[i,a:b] = np.maximum(transform[i,a:b], mod_pk)
-        for j0 in prange(Nt-Npk, Nt-Npk//2):
-            a = j0
-            b = Nt
-            a_pk = 0
-            b_pk = a_pk + b - a
-            mod_pk = pklet[a_pk:b_pk] * np.nanmin( residual[a:b] / pklet[a_pk:b_pk] )
-            transform[i,a:b] = np.maximum(transform[i,a:b], mod_pk)
-        residual -= transform[i,:]
-    transform[0,:] = residual
-    
-    filters = np.zeros((Nscales+1,Nt))
-    filters[0,:] = data
-    for i in range(1,Nscales+1):
-        filters[i,:] = filters[i-1,:] - transform[i-1,:]
-    
-    transform = np.maximum(transform, 0.0)
-    filters = np.maximum(filters, 0.0)
-    return transform, filters
 
 
-def pkxform_optimized(data: np.ndarray, axis: int = -1, peaklet_func: Callable = pk_parabola2) -> PeakletXform:
+def pkxform(data: np.ndarray, axis: int = -1, peaklet_func: Callable = pk_parabola2) -> PeakletXform:
     """
     Positive Nonlinear Peak Transform ("peaklet transform") on multi-dimensional arrays.
     """
@@ -289,7 +214,7 @@ def pkxform_optimized(data: np.ndarray, axis: int = -1, peaklet_func: Callable =
     data = np.reshape(data, (-1, data.shape[-1]))
 
     scales, pklets = peaklet_func(data.shape[-1])  # get scales and peaklets
-    transform, filters = pqpt_optimized(data, pklets, scales)
+    transform, filters = _pqpt(data, pklets, scales)
     transform = np.maximum(transform, 0.0)
     filters = np.maximum(filters, 0.0)
 
@@ -302,7 +227,7 @@ def pkxform_optimized(data: np.ndarray, axis: int = -1, peaklet_func: Callable =
 
 
 @jit(nopython=True, parallel=True)
-def pqpt_optimized(
+def _pqpt(
         data: np.ndarray,
         pklets,
         scales,
